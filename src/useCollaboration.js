@@ -40,21 +40,45 @@ const uploadFileToStorage = async (drawingId, fileId, dataURL, mimeType) => {
 
 /**
  * Fetch an image from a URL and convert it to a base64 dataURL string.
+ * Falls back to Firebase Storage SDK if direct fetch fails (CORS/auth).
  */
-const fetchFileAsDataURL = async (url, mimeType) => {
+const fetchFileAsDataURL = async (url, mimeType, storagePath) => {
+  // Attempt 1: Direct fetch (works if CORS is configured)
   try {
     const response = await fetch(url)
-    const blob = await response.blob()
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onloadend = () => resolve(reader.result)
-      reader.onerror = reject
-      reader.readAsDataURL(blob)
-    })
+    if (response.ok) {
+      const blob = await response.blob()
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onloadend = () => resolve(reader.result)
+        reader.onerror = reject
+        reader.readAsDataURL(blob)
+      })
+    }
   } catch (error) {
-    console.error('Failed to fetch file from Storage:', error)
-    return null
+    console.warn('Direct fetch failed, trying SDK fallback:', error.message)
   }
+
+  // Attempt 2: Use Firebase Storage SDK to get a fresh download URL
+  if (storagePath) {
+    try {
+      const fileRef = storageRef(storage, storagePath)
+      const freshUrl = await getDownloadURL(fileRef)
+      const response = await fetch(freshUrl)
+      const blob = await response.blob()
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onloadend = () => resolve(reader.result)
+        reader.onerror = reject
+        reader.readAsDataURL(blob)
+      })
+    } catch (error) {
+      console.error('SDK fallback also failed:', error)
+    }
+  }
+
+  console.error('Failed to fetch file from Storage via all methods')
+  return null
 }
 
 /**
@@ -69,7 +93,7 @@ const isStorageReference = (fileValue) => {
  */
 const resolveStorageFile = async (fileValue) => {
   if (!isStorageReference(fileValue)) return fileValue
-  const dataURL = await fetchFileAsDataURL(fileValue.storageUrl, fileValue.mimeType)
+  const dataURL = await fetchFileAsDataURL(fileValue.storageUrl, fileValue.mimeType, fileValue.storagePath)
   if (!dataURL) return null
   return {
     id: fileValue.id,
@@ -845,6 +869,7 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef, { drawingId = n
                         id: fileValue.id || fileId,
                         mimeType: fileValue.mimeType || 'image/png',
                         storageUrl,
+                        storagePath: `drawings/${effectiveDrawingId}/files/${fileId}`,
                         created: fileValue.created || Date.now(),
                       }
                     } else {
