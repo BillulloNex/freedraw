@@ -12,8 +12,73 @@ import {
   set,
   update,
 } from 'firebase/database'
-import { database } from './firebase'
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { database, storage } from './firebase'
 import { getOrCreateUserIdentity, updateStoredUserIdentity } from './userIdentity'
+
+// --- Firebase Storage helpers for image files ---
+
+/**
+ * Upload a base64 dataURL to Firebase Storage and return the download URL.
+ * Path: drawings/{drawingId}/files/{fileId}
+ */
+const uploadFileToStorage = async (drawingId, fileId, dataURL, mimeType) => {
+  try {
+    // Convert base64 dataURL to a Blob
+    const response = await fetch(dataURL)
+    const blob = await response.blob()
+
+    const fileRef = storageRef(storage, `drawings/${drawingId}/files/${fileId}`)
+    await uploadBytes(fileRef, blob, { contentType: mimeType || 'image/png' })
+    const downloadURL = await getDownloadURL(fileRef)
+    return downloadURL
+  } catch (error) {
+    console.error(`Failed to upload file ${fileId} to Storage:`, error)
+    return null
+  }
+}
+
+/**
+ * Fetch an image from a URL and convert it to a base64 dataURL string.
+ */
+const fetchFileAsDataURL = async (url, mimeType) => {
+  try {
+    const response = await fetch(url)
+    const blob = await response.blob()
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result)
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
+  } catch (error) {
+    console.error('Failed to fetch file from Storage:', error)
+    return null
+  }
+}
+
+/**
+ * Check if a file record is a storage reference (not a full dataURL).
+ */
+const isStorageReference = (fileValue) => {
+  return fileValue && fileValue.storageUrl && !fileValue.dataURL
+}
+
+/**
+ * Resolve a storage reference into a full Excalidraw file object.
+ */
+const resolveStorageFile = async (fileValue) => {
+  if (!isStorageReference(fileValue)) return fileValue
+  const dataURL = await fetchFileAsDataURL(fileValue.storageUrl, fileValue.mimeType)
+  if (!dataURL) return null
+  return {
+    id: fileValue.id,
+    mimeType: fileValue.mimeType || 'image/png',
+    dataURL,
+    created: fileValue.created || Date.now(),
+    lastRetrieved: Date.now(),
+  }
+}
 
 // Path builders — parameterized by drawingId
 const buildPaths = (drawingId) => {
@@ -472,12 +537,26 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef, { drawingId = n
       )
 
       const filesRef = ref(database, PATHS.CANVAS_FILES_PATH)
-      const handleFileUpsert = (snapshot) => {
-        filesStateRef.current = {
-          ...filesStateRef.current,
-          [snapshot.key]: snapshot.val(),
+      const handleFileUpsert = async (snapshot) => {
+        const fileValue = snapshot.val()
+        if (isStorageReference(fileValue)) {
+          // File is stored in Firebase Storage — fetch the actual blob
+          const resolved = await resolveStorageFile(fileValue)
+          if (resolved) {
+            filesStateRef.current = {
+              ...filesStateRef.current,
+              [snapshot.key]: resolved,
+            }
+            scheduleSceneRender('realtime', true)
+          }
+        } else {
+          // Legacy: full file data is in RTDB (small files or old data)
+          filesStateRef.current = {
+            ...filesStateRef.current,
+            [snapshot.key]: fileValue,
+          }
+          scheduleSceneRender('realtime', true)
         }
-        scheduleSceneRender('realtime', true)
       }
 
       unsubscribes.push(onChildAdded(filesRef, handleFileUpsert))
@@ -750,13 +829,38 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef, { drawingId = n
         const nextFiles = { ...filesStateRef.current }
         let hadFileUpdates = false
 
+        // Upload new/changed files to Firebase Storage, store reference in RTDB
+        const fileUploadPromises = []
         Object.entries(mergedFiles).forEach(([fileId, fileValue]) => {
           const normalized = normalizeFileForCompare(fileValue)
           const previous = normalizeFileForCompare(filesStateRef.current[fileId])
           if (!filesAreEqual(previous, normalized)) {
-            updates[`${PATHS.CANVAS_FILES_PATH}/${fileId}`] = fileValue
-            nextFiles[fileId] = fileValue
-            hadFileUpdates = true
+            if (fileValue.dataURL && fileValue.dataURL.startsWith('data:')) {
+              // Upload to Storage, write reference to RTDB
+              fileUploadPromises.push(
+                uploadFileToStorage(effectiveDrawingId, fileId, fileValue.dataURL, fileValue.mimeType)
+                  .then((storageUrl) => {
+                    if (storageUrl) {
+                      updates[`${PATHS.CANVAS_FILES_PATH}/${fileId}`] = {
+                        id: fileValue.id || fileId,
+                        mimeType: fileValue.mimeType || 'image/png',
+                        storageUrl,
+                        created: fileValue.created || Date.now(),
+                      }
+                    } else {
+                      // Fallback: store inline if upload fails (small files only)
+                      updates[`${PATHS.CANVAS_FILES_PATH}/${fileId}`] = fileValue
+                    }
+                    nextFiles[fileId] = fileValue // keep full data in local state
+                    hadFileUpdates = true
+                  })
+              )
+            } else {
+              // Non-dataURL file or already a reference
+              updates[`${PATHS.CANVAS_FILES_PATH}/${fileId}`] = fileValue
+              nextFiles[fileId] = fileValue
+              hadFileUpdates = true
+            }
           }
         })
 
@@ -767,6 +871,11 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef, { drawingId = n
             hadFileUpdates = true
           }
         })
+
+        // Wait for all file uploads to complete before writing to RTDB
+        if (fileUploadPromises.length > 0) {
+          await Promise.all(fileUploadPromises)
+        }
 
         if (Object.keys(updates).length === 0) {
           isSavingRef.current = false
