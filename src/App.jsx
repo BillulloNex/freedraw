@@ -471,6 +471,15 @@ function App() {
                 elements: [...currentElements, imageElement],
               })
 
+              // Explicitly trigger a save — updateScene fires onChange with source='api'
+              // which is skipped by the collaboration handler, so we must manually flush
+              // to ensure the file gets uploaded to Storage and written to RTDB
+              setTimeout(() => {
+                if (saveChanges) {
+                  saveChanges('image-paste')
+                }
+              }, 100)
+
               console.log('Image element added to canvas, file stored for sync')
             }
 

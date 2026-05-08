@@ -850,6 +850,11 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef, { drawingId = n
           ...pendingFiles,
         }
 
+        console.log('[FILE-SYNC] currentFiles count:', Object.keys(currentFiles).length)
+        console.log('[FILE-SYNC] pendingFiles count:', Object.keys(pendingFiles).length)
+        console.log('[FILE-SYNC] mergedFiles count:', Object.keys(mergedFiles).length)
+        console.log('[FILE-SYNC] filesStateRef count:', Object.keys(filesStateRef.current).length)
+
         const nextFiles = { ...filesStateRef.current }
         let hadFileUpdates = false
 
@@ -858,12 +863,16 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef, { drawingId = n
         Object.entries(mergedFiles).forEach(([fileId, fileValue]) => {
           const normalized = normalizeFileForCompare(fileValue)
           const previous = normalizeFileForCompare(filesStateRef.current[fileId])
-          if (!filesAreEqual(previous, normalized)) {
+          const areEqual = filesAreEqual(previous, normalized)
+          console.log(`[FILE-SYNC] File ${fileId}: equal=${areEqual}, hasDataURL=${!!(fileValue.dataURL && fileValue.dataURL.startsWith('data:'))}, hasPrevious=${!!previous}`)
+          if (!areEqual) {
             if (fileValue.dataURL && fileValue.dataURL.startsWith('data:')) {
               // Upload to Storage, write reference to RTDB
+              console.log(`[FILE-SYNC] Uploading file ${fileId} to Storage...`)
               fileUploadPromises.push(
                 uploadFileToStorage(effectiveDrawingId, fileId, fileValue.dataURL, fileValue.mimeType)
                   .then((storageUrl) => {
+                    console.log(`[FILE-SYNC] Upload result for ${fileId}: storageUrl=${storageUrl ? 'YES' : 'NULL'}`)
                     if (storageUrl) {
                       updates[`${PATHS.CANVAS_FILES_PATH}/${fileId}`] = {
                         id: fileValue.id || fileId,
@@ -879,9 +888,13 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef, { drawingId = n
                     nextFiles[fileId] = fileValue // keep full data in local state
                     hadFileUpdates = true
                   })
+                  .catch((err) => {
+                    console.error(`[FILE-SYNC] Upload FAILED for ${fileId}:`, err)
+                  })
               )
             } else {
               // Non-dataURL file or already a reference
+              console.log(`[FILE-SYNC] File ${fileId} has no dataURL, storing directly`)
               updates[`${PATHS.CANVAS_FILES_PATH}/${fileId}`] = fileValue
               nextFiles[fileId] = fileValue
               hadFileUpdates = true
@@ -899,7 +912,9 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef, { drawingId = n
 
         // Wait for all file uploads to complete before writing to RTDB
         if (fileUploadPromises.length > 0) {
+          console.log(`[FILE-SYNC] Waiting for ${fileUploadPromises.length} uploads...`)
           await Promise.all(fileUploadPromises)
+          console.log(`[FILE-SYNC] All uploads complete. Updates keys:`, Object.keys(updates).filter(k => k.includes('files')))
         }
 
         if (Object.keys(updates).length === 0) {
@@ -1228,6 +1243,9 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef, { drawingId = n
       }
       return null
     }
+    // Force pending flag — needed when changes come from API-sourced updates
+    // (e.g. image paste via updateScene) which skip the onChange handler
+    hasPendingSaveRef.current = true
     return flush({ reason, allowRetry: false })
   }, [])
 
