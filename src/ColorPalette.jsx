@@ -69,15 +69,11 @@ function ColorPalette({ selectedColor, onColorSelect, colorMode, onModeChange, i
             className={`color-swatch${selectedColor === color.hex ? ' color-swatch--active' : ''}${color.hex === 'transparent' ? ' color-swatch--transparent' : ''}`}
             style={{
               backgroundColor: color.hex === 'transparent' ? 'transparent' : color.hex,
-              color: getTextColorForBackground(color.hex, isDarkTheme),
             }}
             onClick={() => handleColorClick(color.hex)}
             aria-label={`Select ${color.name} color`}
             title={color.name}
-          >
-            <span className="color-swatch__index">{formatSwatchNumber(index)}</span>
-            <span className="color-swatch__name">{color.name}</span>
-          </button>
+          />
         ))}
       </div>
     </div>

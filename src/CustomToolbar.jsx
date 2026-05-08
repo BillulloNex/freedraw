@@ -86,7 +86,6 @@ function CustomToolbar({ activeTool, onSelect, isDarkTheme }) {
             aria-label={label}
           >
             <IconComponent size={18} weight={activeTool === type ? 'fill' : 'regular'} />
-            <span className="custom-toolbar__label">{label}</span>
           </button>
         )
       })}

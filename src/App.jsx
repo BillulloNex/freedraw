@@ -20,8 +20,8 @@ import './App.css'
 import { useCollaboration } from './useCollaboration'
 import { handleImageUpload, uploadAvatarToStorage } from './imageHandler'
 import AvatarSetup from './AvatarSetup'
-import CustomToolbar from './CustomToolbar'
-import ColorPalette from './ColorPalette'
+// import CustomToolbar from './CustomToolbar'
+// import ColorPalette from './ColorPalette'
 import { saveCanvasSnapshot } from './canvasSnapshots'
 import { useAuth } from './AuthContext'
 
@@ -38,7 +38,7 @@ function App() {
   const [theme, setTheme] = useState('dark')
   const [gridMode, setGridMode] = useState(false)
   const [viewMode, setViewMode] = useState(false)
-  const [zenMode] = useState(true)
+  const [zenMode] = useState(false)
   const [activeTool, setActiveTool] = useState('selection')
   const pendingFilesRef = useRef({})
   const hoverInfoRef = useRef(null)
@@ -935,7 +935,7 @@ function App() {
             <span className="version-info">v{APP_VERSION}</span>
           </div>
         </button>
-        <a
+        {/* <a
           href="https://discord.com/invite/kuzXr2Vh"
           className="brand-discord-link"
           target="_blank"
@@ -943,7 +943,7 @@ function App() {
         >
           <DiscordLogo size={18} weight="fill" />
           <span>Hang with us on Discord</span>
-        </a>
+        </a> */}
         <div
           id="brand-menu"
           className={`brand-menu${isMenuOpen ? ' brand-menu--open' : ''}`}
@@ -1002,21 +1002,7 @@ function App() {
         </div>
       </div>
 
-      <CustomToolbar
-        activeTool={activeTool}
-        onSelect={handleToolSelect}
-        isDarkTheme={theme === 'dark'}
-      />
 
-      {(hasSelectedElements || activeTool !== 'selection') && (
-        <ColorPalette
-          selectedColor={colorMode === 'stroke' ? selectedColor : selectedBackgroundColor}
-          onColorSelect={handleColorSelect}
-          colorMode={colorMode}
-          onModeChange={handleColorModeChange}
-          isDarkTheme={theme === 'dark'}
-        />
-      )}
 
       <main className="canvas-area">
         {syncIndicatorKey && (
@@ -1031,98 +1017,85 @@ function App() {
             <div className="loading-message">Loading shared canvas...</div>
           </div>
         )}
+
+        {/* ── Figma-style presence bar ── */}
         {userIdentity && (
-          <div className="user-hud">
-            <div className="user-tray">
+          <div className="presence-bar" role="group" aria-label="People on this canvas">
+            {/* Other online users — stacked avatars */}
+            <div className="presence-bar__others" role="list">
+              {visibleOnlineUsers
+                .filter((u) => u.id !== userIdentity.browserId)
+                .map((user, idx) => (
+                  <span
+                    role="listitem"
+                    key={user.id}
+                    className={`presence-bar__avatar${user.avatarUrl ? ' presence-bar__avatar--image' : ''}`}
+                    style={{
+                      backgroundColor: user.color,
+                      borderColor: user.color,
+                      zIndex: 10 - idx,
+                    }}
+                    title={user.username}
+                  >
+                    {user.avatarUrl ? (
+                      <img src={user.avatarUrl} alt={`${user.username ?? 'Guest'}`} />
+                    ) : (
+                      user.username?.charAt(0)?.toUpperCase() ?? '?'
+                    )}
+                    <span className="presence-bar__online-dot" />
+                  </span>
+                ))}
+              {overflowCount > 0 && (
+                <span className="presence-bar__overflow">+{overflowCount}</span>
+              )}
+            </div>
+
+            {/* Separator */}
+            {visibleOnlineUsers.filter((u) => u.id !== userIdentity.browserId).length > 0 && (
+              <span className="presence-bar__sep" />
+            )}
+
+            {/* "You" avatar — opens save/export tray */}
+            <div className="presence-bar__self-wrap">
               <button
                 type="button"
-                className="presence-toggle"
-                onClick={() => setIsMenuOpen(false)}
-                aria-label={`${onlineCount} ${onlineCount === 1 ? 'person' : 'people'} online`}
+                className={`presence-bar__avatar presence-bar__avatar--self${userIdentity.avatarUrl ? ' presence-bar__avatar--image' : ''}`}
+                style={{
+                  backgroundColor: userIdentity.color,
+                  borderColor: userIdentity.color,
+                }}
+                onClick={handleAvatarEdit}
+                aria-label="Your profile"
+                title={`${userIdentity.username} (you)`}
               >
-                {onlineCount}
+                {userIdentity.avatarUrl ? (
+                  <img src={userIdentity.avatarUrl} alt={`${userIdentity.username} avatar`} />
+                ) : (
+                  userIdentity.username?.charAt(0)?.toUpperCase() ?? '?'
+                )}
+                <span className="presence-bar__online-dot presence-bar__online-dot--you" />
               </button>
-              <div className="user-tray__panel">
-                <div className="save-controls" aria-live="polite">
+
+              {/* Save controls dropdown */}
+              <div className="presence-bar__save-tray">
+                <button
+                  type="button"
+                  className="save-controls__button"
+                  onClick={handleManualSave}
+                  disabled={!hasPendingChanges && !isSaving}
+                >
+                  {isSaving ? 'Saving…' : hasPendingChanges ? 'Save changes' : 'Saved'}
+                </button>
+                {isAdmin && (
                   <button
                     type="button"
-                    className="save-controls__button"
-                    onClick={handleManualSave}
-                    disabled={!hasPendingChanges && !isSaving}
+                    className="save-controls__button save-controls__button--secondary"
+                    onClick={handleCanvasExport}
+                    disabled={!excalidrawAPI || isExportingCanvas}
                   >
-                    {isSaving ? 'Saving…' : hasPendingChanges ? 'Save changes' : 'Save'}
+                    {isExportingCanvas ? 'Exporting…' : 'Export image'}
                   </button>
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      className="save-controls__button save-controls__button--secondary"
-                      onClick={handleCanvasExport}
-                      disabled={!excalidrawAPI || isExportingCanvas}
-                    >
-                      {isExportingCanvas ? 'Exporting…' : 'Export image'}
-                    </button>
-                  )}
-                </div>
-                <div className="presence-summary" aria-live="polite">
-                  <span className="presence-summary__dot" />
-                  <div className="presence-summary__text">
-                    <span className="presence-summary__count">{onlineCount}</span>
-                    <span className="presence-summary__label">
-                      {onlineCount === 1 ? 'person online' : 'people online'}
-                    </span>
-                  </div>
-                  {visibleOnlineUsers.length > 0 && (
-                    <div className="presence-summary__avatars" role="list">
-                      {visibleOnlineUsers.map((user) => (
-                        <span
-                          role="listitem"
-                          key={user.id}
-                          className={`presence-summary__avatar${user.avatarUrl ? ' presence-summary__avatar--image' : ''}`}
-                          style={{ backgroundColor: user.color }}
-                          title={user.username}
-                        >
-                          {user.avatarUrl ? (
-                            <img src={user.avatarUrl} alt={`${user.username ?? 'Guest'} avatar`} />
-                          ) : (
-                            user.username?.charAt(0)?.toUpperCase() ?? '?'
-                          )}
-                        </span>
-                      ))}
-                      {overflowCount > 0 && <span className="presence-summary__more">+{overflowCount}</span>}
-                    </div>
-                  )}
-                </div>
-                <div className="user-card">
-                  <button
-                    type="button"
-                    className={`user-card__portrait${userIdentity.avatarUrl ? ' user-card__portrait--image' : ''}`}
-                    onClick={handleAvatarEdit}
-                    aria-label={userIdentity.avatarUrl ? 'Edit avatar' : 'Add avatar'}
-                  >
-                    {userIdentity.avatarUrl ? (
-                      <img src={userIdentity.avatarUrl} alt={`${userIdentity.username} avatar`} />
-                    ) : (
-                      <span className="user-card__initial">
-                        {userIdentity.username?.charAt(0)?.toUpperCase() ?? '?'}
-                      </span>
-                    )}
-                  </button>
-                  <div className="user-card__footer">
-                    <span className="user-card__label">You are</span>
-                    <span
-                      className="user-card__name"
-                      style={{ color: userIdentity.color }}
-                    >
-                      {userIdentity.username}
-                    </span>
-                    <div className="user-card__meta">
-                      {isAdmin && <span className="user-role-badge">Admin</span>}
-                      <button type="button" className="user-card__edit" onClick={handleAvatarEdit}>
-                        {userIdentity.avatarUrl ? 'Edit avatar' : 'Add avatar'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -1139,8 +1112,7 @@ function App() {
           validateEmbeddable={() => true}
           UIOptions={{
             canvasActions: {
-              toggleTheme: false,
-              viewBackgroundColor: false,
+              toggleTheme: true,
             },
           }}
           initialData={{
