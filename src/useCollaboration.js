@@ -375,10 +375,18 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef, { drawingId = n
 
       try {
         isApplyingSceneUpdateRef.current = true
+
+        // Register files via addFiles — Excalidraw requires this for proper
+        // binary file rendering. updateScene({files}) does NOT register files
+        // in Excalidraw's internal file manager.
+        const fileEntries = Object.values(files).filter(f => f && f.dataURL)
+        if (fileEntries.length > 0) {
+          excalidrawAPI.addFiles(fileEntries)
+        }
+
         excalidrawAPI.updateScene({
           elements,
           appState,
-          files,
         })
         previousSceneRef.current = cloneElements(elements)
         lastAppStateRef.current = { ...appState }
