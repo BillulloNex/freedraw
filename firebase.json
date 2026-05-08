@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "site": "easle1",
+    "site": "beedraw2",
     "public": "dist",
     "ignore": [
       "firebase.json",
@@ -14,10 +14,16 @@
       }
     ]
   },
-  "database": {
-    "rules": "database.rules.json"
-  },
-  "storage": {
-    "rules": "storage.rules"
-  }
+  "database": [
+    {
+      "instance": "beedraw",
+      "rules": "database.rules.json"
+    }
+  ],
+  "storage": [
+    {
+      "bucket": "beedraw",
+      "rules": "storage.rules"
+    }
+  ]
 }
