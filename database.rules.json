@@ -1,6 +1,50 @@
 {
   "rules": {
-    ".read": "now < 1856736000000",  // 2028-11-02
-    ".write": "now < 1856736000000",  // 2028-11-02
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "workspaces": {
+      ".read": "auth != null",
+      "$wsId": {
+        ".write": "auth != null"
+      }
+    },
+    "drawings": {
+      "$drawingId": {
+        ".read": "auth != null && (root.child('drawing_access').child($drawingId).child(auth.uid).exists() || !data.exists())",
+        ".write": "auth != null && (root.child('drawing_access').child($drawingId).child(auth.uid).exists() || !data.exists())"
+      }
+    },
+    "drawing_access": {
+      ".read": "auth != null",
+      "$drawingId": {
+        "$uid": {
+          ".write": "auth != null"
+        }
+      }
+    },
+    "presence": {
+      "$drawingId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "sessions": {
+      "$drawingId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "snapshots": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "roles": {
+      ".read": "auth != null",
+      ".write": false
+    }
   }
 }

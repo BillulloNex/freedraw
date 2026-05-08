@@ -31,17 +31,40 @@ function Analytics() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Read sessions from ALL drawings: sessions/{drawingId}/{userId}/{sessionId}
     const sessionsRef = ref(database, 'sessions')
     const unsubscribeSessions = onValue(sessionsRef, (snapshot) => {
-      const data = snapshot.val() || {}
-      setSessions(data)
+      const rawData = snapshot.val() || {}
+      // Flatten: { drawingId: { userId: { sessionId: session } } } → { userId: { sessionId: session } }
+      const merged = {}
+      Object.values(rawData).forEach((drawingSessions) => {
+        if (!drawingSessions || typeof drawingSessions !== 'object') return
+        Object.entries(drawingSessions).forEach(([userId, userSessions]) => {
+          if (!userSessions || typeof userSessions !== 'object') return
+          if (!merged[userId]) merged[userId] = {}
+          Object.assign(merged[userId], userSessions)
+        })
+      })
+      setSessions(merged)
       setLoading(false)
     })
 
-    const presenceRef = ref(database, 'presence/users')
+    // Read presence from ALL drawings: presence/{drawingId}/users/{userId}
+    const presenceRef = ref(database, 'presence')
     const unsubscribePresence = onValue(presenceRef, (snapshot) => {
-      const data = snapshot.val() || {}
-      setPresence(data)
+      const rawData = snapshot.val() || {}
+      const merged = {}
+      Object.values(rawData).forEach((drawingPresence) => {
+        const users = drawingPresence?.users
+        if (!users || typeof users !== 'object') return
+        Object.entries(users).forEach(([userId, userData]) => {
+          // Keep the most recently active entry for each user
+          if (!merged[userId] || (userData?.lastActiveAt || 0) > (merged[userId]?.lastActiveAt || 0)) {
+            merged[userId] = userData
+          }
+        })
+      })
+      setPresence(merged)
     })
 
     return () => {
@@ -358,7 +381,7 @@ function Analytics() {
       <header className="analytics-header">
         <h1>📊 User Analytics Dashboard</h1>
         <a href="/" className="back-link">
-          ← Back to Canvas
+          ← Back to Dashboard
         </a>
       </header>
 

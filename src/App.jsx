@@ -1,6 +1,7 @@
 /* global __APP_VERSION__ */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useParams } from 'react-router-dom'
 import { Excalidraw, exportToBlob } from '@excalidraw/excalidraw'
 import {
   MoonStars,
@@ -22,6 +23,7 @@ import AvatarSetup from './AvatarSetup'
 import CustomToolbar from './CustomToolbar'
 import ColorPalette from './ColorPalette'
 import { saveCanvasSnapshot } from './canvasSnapshots'
+import { useAuth } from './AuthContext'
 
 const APP_NAME = 'arcadia'
 
@@ -29,6 +31,8 @@ const APP_NAME = 'arcadia'
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'
 
 function App() {
+  const { drawingId } = useParams()
+  const { user, userProfile } = useAuth()
   const excalidrawRef = useRef(null)
   const [excalidrawAPI, setExcalidrawAPI] = useState(null)
   const [theme, setTheme] = useState('dark')
@@ -60,6 +64,17 @@ function App() {
   const [isExportingCanvas, setIsExportingCanvas] = useState(false)
   const menuRef = useRef(null)
 
+  // Build an authUser object for the collaboration hook (memoized to avoid re-render loops)
+  const authUser = useMemo(() => {
+    if (!user) return null
+    return {
+      uid: user.uid,
+      displayName: userProfile?.displayName || user.displayName || 'Anonymous',
+      color: userProfile?.color || '#4ECDC4',
+      photoURL: userProfile?.photoURL || user.photoURL || null,
+    }
+  }, [user?.uid, user?.displayName, user?.photoURL, userProfile?.displayName, userProfile?.color, userProfile?.photoURL])
+
   // Enable real-time collaboration
   const {
     isLoaded,
@@ -74,7 +89,8 @@ function App() {
     lastSyncInfo,
   } = useCollaboration(
     excalidrawAPI,
-    pendingFilesRef
+    pendingFilesRef,
+    { drawingId, authUser }
   )
 
   const syncIndicatorVariant = lastSyncInfo?.hadRemoteUpdates ? 'active' : 'idle'

@@ -78,7 +78,7 @@ function Timeline() {
         </div>
         <div className="timeline-header__actions">
           <Link to="/" className="timeline-button timeline-button--primary">
-            Back to canvas
+            Back to Dashboard
           </Link>
           <Link to="/analytics" className="timeline-button">
             View analytics

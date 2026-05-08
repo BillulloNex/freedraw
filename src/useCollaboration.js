@@ -15,14 +15,20 @@ import {
 import { database } from './firebase'
 import { getOrCreateUserIdentity, updateStoredUserIdentity } from './userIdentity'
 
-const CANVAS_ROOT_PATH = 'canvas'
-const CANVAS_ELEMENTS_PATH = `${CANVAS_ROOT_PATH}/elements`
-const CANVAS_APP_STATE_PATH = `${CANVAS_ROOT_PATH}/appState`
-const CANVAS_FILES_PATH = `${CANVAS_ROOT_PATH}/files`
-const CANVAS_METADATA_PATH = `${CANVAS_ROOT_PATH}/metadata`
-const LEGACY_CANVAS_PATH = 'canvas/scene'
-const PRESENCE_PATH = 'presence/users'
-const SESSIONS_PATH = 'sessions'
+// Path builders — parameterized by drawingId
+const buildPaths = (drawingId) => {
+  const root = `drawings/${drawingId}/canvas`
+  return {
+    CANVAS_ROOT_PATH: root,
+    CANVAS_ELEMENTS_PATH: `${root}/elements`,
+    CANVAS_APP_STATE_PATH: `${root}/appState`,
+    CANVAS_FILES_PATH: `${root}/files`,
+    CANVAS_METADATA_PATH: `${root}/metadata`,
+    LEGACY_CANVAS_PATH: `${root}/scene`,
+    PRESENCE_PATH: `presence/${drawingId}/users`,
+    SESSIONS_PATH: `sessions/${drawingId}`,
+  }
+}
 const ADMIN_PATH = 'roles/admins'
 const HEARTBEAT_INTERVAL = 20000
 
@@ -133,7 +139,10 @@ const filesAreEqual = (a, b) => {
   return JSON.stringify(normalizeFileForCompare(a)) === JSON.stringify(normalizeFileForCompare(b))
 }
 
-export function useCollaboration(excalidrawAPI, pendingFilesRef) {
+export function useCollaboration(excalidrawAPI, pendingFilesRef, { drawingId = null, authUser = null } = {}) {
+  // Compute drawing-specific paths
+  const effectiveDrawingId = drawingId || '__global__'
+  const PATHS = buildPaths(effectiveDrawingId)
   const [isLoaded, setIsLoaded] = useState(false)
   const [userIdentity, setUserIdentity] = useState(null)
   const [onlineUsers, setOnlineUsers] = useState([])
@@ -166,7 +175,7 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
   const loadCanvasRef = useRef(null)
 
   useEffect(() => {
-    const presenceListRef = ref(database, PRESENCE_PATH)
+    const presenceListRef = ref(database, PATHS.PRESENCE_PATH)
     const presenceMap = {}
 
     const emitPresence = () => {
@@ -215,7 +224,7 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
         }
       })
     }
-  }, [])
+  }, [effectiveDrawingId])
 
   useEffect(() => {
     const adminsRef = ref(database, ADMIN_PATH)
@@ -375,21 +384,21 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
       const updates = {}
 
       elements.forEach((element) => {
-        updates[`${CANVAS_ELEMENTS_PATH}/${element.id}`] = element
+        updates[`${PATHS.CANVAS_ELEMENTS_PATH}/${element.id}`] = element
       })
 
       Object.entries(filesData).forEach(([fileId, fileValue]) => {
-        updates[`${CANVAS_FILES_PATH}/${fileId}`] = fileValue
+        updates[`${PATHS.CANVAS_FILES_PATH}/${fileId}`] = fileValue
       })
 
-      updates[CANVAS_APP_STATE_PATH] = appState
-      updates[CANVAS_METADATA_PATH] = {
+      updates[PATHS.CANVAS_APP_STATE_PATH] = appState
+      updates[PATHS.CANVAS_METADATA_PATH] = {
         migratedAt: Date.now(),
         migratedBy: userId,
         updatedAt: Date.now(),
         updatedBy: userId,
       }
-      updates[LEGACY_CANVAS_PATH] = null
+      updates[PATHS.LEGACY_CANVAS_PATH] = null
 
       await update(ref(database), updates)
 
@@ -401,7 +410,7 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
     }
 
     const loadInitialCanvas = async (userId, reason = 'initial') => {
-      const canvasRootRef = ref(database, CANVAS_ROOT_PATH)
+      const canvasRootRef = ref(database, PATHS.CANVAS_ROOT_PATH)
       const snapshot = await get(canvasRootRef)
 
       if (!snapshot.exists()) {
@@ -442,7 +451,7 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
 
       const unsubscribes = []
 
-      const elementsRef = ref(database, CANVAS_ELEMENTS_PATH)
+      const elementsRef = ref(database, PATHS.CANVAS_ELEMENTS_PATH)
       const handleElementUpsert = (snapshot) => {
         const element = sanitizeElement(snapshot.val())
         if (!element) {
@@ -462,7 +471,7 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
         })
       )
 
-      const filesRef = ref(database, CANVAS_FILES_PATH)
+      const filesRef = ref(database, PATHS.CANVAS_FILES_PATH)
       const handleFileUpsert = (snapshot) => {
         filesStateRef.current = {
           ...filesStateRef.current,
@@ -482,7 +491,7 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
         })
       )
 
-      const appStateRef = ref(database, CANVAS_APP_STATE_PATH)
+      const appStateRef = ref(database, PATHS.CANVAS_APP_STATE_PATH)
       unsubscribes.push(
         onValue(appStateRef, (snapshot) => {
           const data = snapshot.val() || {}
@@ -506,6 +515,20 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
     }
 
     const initializeIdentity = async () => {
+      // If we have an authenticated user, build identity from them
+      if (authUser) {
+        const identity = {
+          browserId: authUser.uid,
+          username: authUser.displayName || 'Anonymous',
+          color: authUser.color || '#4ECDC4',
+          avatarUrl: authUser.photoURL || null,
+        }
+        if (isUnmounted) return null
+        userIdRef.current = identity.browserId
+        setUserIdentity(identity)
+        return identity
+      }
+      // Fallback to anonymous identity
       const identity = await getOrCreateUserIdentity()
       if (isUnmounted) {
         return null
@@ -521,8 +544,8 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
         return () => {}
       }
       const userId = identity.browserId
-      const presenceRef = ref(database, `${PRESENCE_PATH}/${userId}`)
-      const sessionsListRef = ref(database, `${SESSIONS_PATH}/${userId}`)
+      const presenceRef = ref(database, `${PATHS.PRESENCE_PATH}/${userId}`)
+      const sessionsListRef = ref(database, `${PATHS.SESSIONS_PATH}/${userId}`)
 
       const assignOwnerMetadata = (element, ownerId = userId) => {
         const existingCustomData = { ...(element.customData || {}) }
@@ -683,7 +706,7 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
             desiredElements.push(decorated)
             const remoteElement = remoteElementsMap.get(decorated.id)
             if (!elementsAreEqual(remoteElement, decorated)) {
-              updates[`${CANVAS_ELEMENTS_PATH}/${decorated.id}`] = decorated
+              updates[`${PATHS.CANVAS_ELEMENTS_PATH}/${decorated.id}`] = decorated
               nextElementsMap.set(decorated.id, decorated)
             }
           })
@@ -692,7 +715,7 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
 
         remoteElementsMap.forEach((remoteElement, id) => {
           if (!desiredIds.has(id)) {
-            updates[`${CANVAS_ELEMENTS_PATH}/${id}`] = null
+            updates[`${PATHS.CANVAS_ELEMENTS_PATH}/${id}`] = null
             nextElementsMap.delete(id)
           }
         })
@@ -713,7 +736,7 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
           (appStateStateRef.current?.gridSize ?? null) !== normalizedAppState.gridSize
 
         if (appStateChanged) {
-          updates[CANVAS_APP_STATE_PATH] = normalizedAppState
+          updates[PATHS.CANVAS_APP_STATE_PATH] = normalizedAppState
           appStateStateRef.current = normalizedAppState
         }
 
@@ -731,7 +754,7 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
           const normalized = normalizeFileForCompare(fileValue)
           const previous = normalizeFileForCompare(filesStateRef.current[fileId])
           if (!filesAreEqual(previous, normalized)) {
-            updates[`${CANVAS_FILES_PATH}/${fileId}`] = fileValue
+            updates[`${PATHS.CANVAS_FILES_PATH}/${fileId}`] = fileValue
             nextFiles[fileId] = fileValue
             hadFileUpdates = true
           }
@@ -739,7 +762,7 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
 
         Object.keys(filesStateRef.current).forEach((fileId) => {
           if (!mergedFiles[fileId]) {
-            updates[`${CANVAS_FILES_PATH}/${fileId}`] = null
+            updates[`${PATHS.CANVAS_FILES_PATH}/${fileId}`] = null
             delete nextFiles[fileId]
             hadFileUpdates = true
           }
@@ -752,7 +775,7 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
           return null
         }
 
-        updates[CANVAS_METADATA_PATH] = {
+        updates[PATHS.CANVAS_METADATA_PATH] = {
           updatedAt: Date.now(),
           updatedBy: userId,
         }
@@ -974,7 +997,7 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef) {
       }
       detachCanvasListeners()
     }
-  }, [excalidrawAPI, pendingFilesRef])
+  }, [excalidrawAPI, pendingFilesRef, effectiveDrawingId, authUser])
 
   const updateCursorPosition = useCallback((cursor) => {
     const presenceRef = presenceRefRef.current
