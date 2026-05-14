@@ -39,6 +39,324 @@
   --panel-shadow: 0 18px 36px rgba(0, 0, 0, 0.35);
 }
 
+/* ── Canvas Breadcrumb (Back to Home + Drawing Title) ── */
+.canvas-breadcrumb {
+  position: fixed;
+  top: 1.25rem;
+  left: 1.25rem;
+  z-index: 120;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 0.3rem 0.85rem 0.3rem 0.3rem;
+  border: 1px solid rgba(243, 241, 228, 0.15);
+  border-radius: 999px;
+  background: var(--toolbar-background);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  pointer-events: auto;
+  max-width: 360px;
+}
+
+.back-home-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--toolbar-foreground);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+  padding: 0;
+  font-family: inherit;
+}
+
+.back-home-btn:hover,
+.back-home-btn:focus-visible {
+  background: rgba(83, 124, 247, 0.18);
+  color: var(--color-royal);
+  outline: none;
+}
+
+.back-home-btn:active {
+  background: rgba(83, 124, 247, 0.28);
+}
+
+.canvas-breadcrumb__trail {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.canvas-breadcrumb__sep {
+  color: rgba(243, 241, 228, 0.25);
+  flex-shrink: 0;
+}
+
+.canvas-breadcrumb__workspace {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: rgba(243, 241, 228, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.canvas-breadcrumb__drawing {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--toolbar-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.canvas-breadcrumb__spacer {
+  flex: 1;
+}
+
+.canvas-breadcrumb__share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid rgba(83, 124, 247, 0.35);
+  border-radius: 8px;
+  background: rgba(83, 124, 247, 0.12);
+  color: var(--color-royal);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+  letter-spacing: 0.015em;
+}
+
+.canvas-breadcrumb__share-btn:hover {
+  background: rgba(83, 124, 247, 0.22);
+  border-color: rgba(83, 124, 247, 0.55);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(83, 124, 247, 0.15);
+}
+
+.canvas-breadcrumb__share-btn:active {
+  transform: translateY(0);
+  background: rgba(83, 124, 247, 0.3);
+}
+
+/* ── Share Dialog (Drawing Workspace) ── */
+.share-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  animation: shareOverlayIn 0.18s ease;
+}
+
+@keyframes shareOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.share-dialog {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 1.5rem;
+  background: rgba(28, 28, 28, 0.96);
+  border: 1px solid rgba(243, 241, 228, 0.08);
+  border-radius: 20px;
+  padding: 1.75rem;
+  backdrop-filter: blur(30px);
+  box-shadow: 0 32px 64px rgba(0, 0, 0, 0.45);
+  animation: shareDialogIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes shareDialogIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.share-dialog__header {
+  margin-bottom: 1.25rem;
+}
+
+.share-dialog__title {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem;
+  color: var(--color-paper, #F3F1E4);
+}
+
+.share-dialog__drawing-name {
+  font-size: 0.82rem;
+  color: rgba(243, 241, 228, 0.45);
+  font-weight: 500;
+  padding-left: 1.75rem;
+}
+
+.share-dialog__copy-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid rgba(243, 241, 228, 0.08);
+  border-radius: 12px;
+  background: rgba(243, 241, 228, 0.04);
+  color: rgba(243, 241, 228, 0.7);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 1.25rem;
+}
+
+.share-dialog__copy-link:hover {
+  background: rgba(243, 241, 228, 0.08);
+  color: var(--color-paper, #F3F1E4);
+  border-color: rgba(243, 241, 228, 0.15);
+}
+
+.share-dialog__copy-link--copied {
+  background: rgba(76, 175, 80, 0.12);
+  color: #81C784;
+  border-color: rgba(76, 175, 80, 0.2);
+}
+
+.share-dialog__invite-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.share-dialog__label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(243, 241, 228, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.share-dialog__body {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.share-dialog__input {
+  flex: 1;
+  min-width: 160px;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid rgba(243, 241, 228, 0.1);
+  border-radius: 12px;
+  background: rgba(243, 241, 228, 0.05);
+  color: var(--color-paper, #F3F1E4);
+  font-family: inherit;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.share-dialog__input:focus {
+  border-color: var(--color-royal, #537CF7);
+  box-shadow: 0 0 0 3px rgba(83, 124, 247, 0.1);
+}
+
+.share-dialog__select {
+  padding: 0.6rem 0.7rem;
+  border: 1px solid rgba(243, 241, 228, 0.1);
+  border-radius: 12px;
+  background: rgba(243, 241, 228, 0.05);
+  color: var(--color-paper, #F3F1E4);
+  font-family: inherit;
+  font-size: 0.85rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.share-dialog__btn {
+  padding: 0.6rem 1.1rem;
+  border: none;
+  border-radius: 12px;
+  background: var(--color-royal, #537CF7);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s, opacity 0.15s;
+}
+
+.share-dialog__btn:hover:not(:disabled) {
+  background: #4568e0;
+  transform: translateY(-1px);
+}
+
+.share-dialog__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.share-dialog__feedback {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 0.15rem 0;
+  animation: feedbackIn 0.2s ease;
+}
+
+@keyframes feedbackIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.share-dialog__feedback--success {
+  color: #81C784;
+}
+
+.share-dialog__feedback--error {
+  color: #E57373;
+}
+
+.share-dialog__close {
+  display: block;
+  margin-top: 1.25rem;
+  width: 100%;
+  padding: 0.55rem;
+  border: 1px solid rgba(243, 241, 228, 0.06);
+  border-radius: 12px;
+  background: transparent;
+  color: rgba(243, 241, 228, 0.45);
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.share-dialog__close:hover {
+  background: rgba(243, 241, 228, 0.06);
+  color: var(--color-paper, #F3F1E4);
+}
+
 .floating-brand {
   position: fixed;
   top: 1.25rem;
@@ -777,6 +1095,22 @@
 
 /* ── Mobile responsive ── */
 @media (max-width: 768px) {
+  .canvas-breadcrumb {
+    top: calc(env(safe-area-inset-top, 0) + 0.75rem);
+    left: 0.75rem;
+    max-width: 280px;
+    padding: 0.25rem 0.65rem 0.25rem 0.25rem;
+  }
+
+  .canvas-breadcrumb__workspace {
+    max-width: 80px;
+  }
+
+  .canvas-breadcrumb__drawing {
+    max-width: 100px;
+    font-size: 0.75rem;
+  }
+
   .floating-brand {
     top: calc(env(safe-area-inset-top, 0) + 0.75rem);
     right: 0.75rem;

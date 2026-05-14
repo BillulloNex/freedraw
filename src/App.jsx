@@ -1,7 +1,11 @@
 /* global __APP_VERSION__ */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { createPortal } from 'react-dom'
+import { useParams, useNavigate } from 'react-router-dom'
+import { ref, get, set, onValue, update as rtdbUpdate, serverTimestamp } from 'firebase/database'
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { database, storage } from './firebase'
 import { Excalidraw, exportToBlob } from '@excalidraw/excalidraw'
 import {
   MoonStars,
@@ -13,6 +17,12 @@ import {
   MagnifyingGlass,
   ClockClockwise,
   DiscordLogo,
+  House,
+  CaretRight,
+  ShareNetwork,
+  Users,
+  LinkSimple,
+  Check,
 } from '@phosphor-icons/react'
 import '@excalidraw/excalidraw/index.css'
 
@@ -32,6 +42,7 @@ const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '
 
 function App() {
   const { drawingId } = useParams()
+  const navigate = useNavigate()
   const { user, userProfile } = useAuth()
   const excalidrawRef = useRef(null)
   const [excalidrawAPI, setExcalidrawAPI] = useState(null)
@@ -63,6 +74,17 @@ function App() {
   const [colorMode, setColorMode] = useState('stroke') // 'stroke' or 'background'
   const [isExportingCanvas, setIsExportingCanvas] = useState(false)
   const menuRef = useRef(null)
+  const [drawingMeta, setDrawingMeta] = useState({ name: '', workspaceName: '' })
+  const lastThumbnailAtRef = useRef(0)
+  const THUMBNAIL_THROTTLE_MS = 30_000 // generate thumbnail at most every 30s
+
+  // Share dialog state
+  const [isShareOpen, setIsShareOpen] = useState(false)
+  const [shareEmail, setShareEmail] = useState('')
+  const [shareRole, setShareRole] = useState('editor')
+  const [shareStatus, setShareStatus] = useState(null) // null | 'sending' | 'success' | 'error'
+  const [shareError, setShareError] = useState('')
+  const [copiedLink, setCopiedLink] = useState(false)
 
   // Build an authUser object for the collaboration hook (memoized to avoid re-render loops)
   const authUser = useMemo(() => {
@@ -96,17 +118,182 @@ function App() {
   const syncIndicatorVariant = lastSyncInfo?.hadRemoteUpdates ? 'active' : 'idle'
   const syncIndicatorKey = lastSyncInfo?.timestamp ?? null
 
+  // Fetch drawing name + workspace name for breadcrumb
+  useEffect(() => {
+    if (!drawingId) return undefined
+
+    const metaRef = ref(database, `drawings/${drawingId}/meta`)
+    const unsubscribe = onValue(metaRef, async (snapshot) => {
+      const meta = snapshot.val()
+      if (!meta) return
+
+      let wsName = ''
+      if (meta.workspaceId) {
+        try {
+          const wsSnap = await get(ref(database, `workspaces/${meta.workspaceId}/meta/name`))
+          wsName = wsSnap.val() || ''
+        } catch (_) {
+          wsName = ''
+        }
+      }
+
+      setDrawingMeta({ name: meta.name || 'Untitled', workspaceName: wsName })
+    })
+
+    return () => unsubscribe()
+  }, [drawingId])
+
+  // Generate + upload a small thumbnail for the dashboard preview
+  const generateThumbnail = useCallback(async () => {
+    if (!excalidrawAPI || !drawingId) return
+
+    // Throttle: only generate once per THUMBNAIL_THROTTLE_MS
+    const now = Date.now()
+    if (now - lastThumbnailAtRef.current < THUMBNAIL_THROTTLE_MS) return
+    lastThumbnailAtRef.current = now
+
+    try {
+      const elements = excalidrawAPI
+        .getSceneElements()
+        ?.filter((el) => el && !el.isDeleted) ?? []
+
+      if (elements.length === 0) return // skip empty canvases
+
+      const appState = excalidrawAPI.getAppState() || {}
+      const files =
+        typeof excalidrawAPI.getFiles === 'function' ? excalidrawAPI.getFiles() : undefined
+
+      const blob = await exportToBlob({
+        elements,
+        appState: {
+          ...appState,
+          exportBackground: true,
+          viewBackgroundColor:
+            appState?.viewBackgroundColor || (theme === 'dark' ? '#212121' : '#F3F1E4'),
+        },
+        files,
+        mimeType: 'image/png',
+        exportPadding: 16,
+        maxWidthOrHeight: 480,
+      })
+
+      // Upload to Storage
+      const thumbRef = storageRef(storage, `drawings/${drawingId}/thumbnail.png`)
+      await uploadBytes(thumbRef, blob, { contentType: 'image/png' })
+      const downloadURL = await getDownloadURL(thumbRef)
+
+      // Write URL to drawing meta
+      await rtdbUpdate(ref(database, `drawings/${drawingId}/meta`), {
+        thumbnailUrl: downloadURL,
+        thumbnailUpdatedAt: now,
+      })
+    } catch (error) {
+      // Thumbnail failures are non-critical — don't break the save flow
+      console.warn('Thumbnail generation failed:', error)
+    }
+  }, [excalidrawAPI, drawingId, theme, THUMBNAIL_THROTTLE_MS])
+
+  // Generate initial thumbnail ~5s after loading (lets canvas render first)
+  const hasGeneratedInitialThumb = useRef(false)
+  useEffect(() => {
+    if (!excalidrawAPI || !drawingId || hasGeneratedInitialThumb.current) return undefined
+    const timer = setTimeout(() => {
+      hasGeneratedInitialThumb.current = true
+      // Force-reset the throttle so it runs immediately
+      lastThumbnailAtRef.current = 0
+      generateThumbnail()
+    }, 5000)
+    return () => clearTimeout(timer)
+  }, [excalidrawAPI, drawingId, generateThumbnail])
+
+  // ── Share drawing handlers ──
+  const handleOpenShare = useCallback(() => {
+    setShareEmail('')
+    setShareRole('editor')
+    setShareStatus(null)
+    setShareError('')
+    setCopiedLink(false)
+    setIsShareOpen(true)
+  }, [])
+
+  const handleCopyLink = useCallback(async () => {
+    try {
+      const url = `${window.location.origin}/draw/${drawingId}`
+      await navigator.clipboard.writeText(url)
+      setCopiedLink(true)
+      setTimeout(() => setCopiedLink(false), 2500)
+    } catch {
+      // Fallback
+      const url = `${window.location.origin}/draw/${drawingId}`
+      const input = document.createElement('input')
+      input.value = url
+      document.body.appendChild(input)
+      input.select()
+      document.execCommand('copy')
+      input.remove()
+      setCopiedLink(true)
+      setTimeout(() => setCopiedLink(false), 2500)
+    }
+  }, [drawingId])
+
+  const handleShareInvite = useCallback(async () => {
+    if (!shareEmail.trim() || !drawingId || !user) return
+    setShareStatus('sending')
+    setShareError('')
+
+    try {
+      // Look up user by email
+      const usersRef = ref(database, 'users')
+      const snapshot = await get(usersRef)
+      const usersData = snapshot.val() || {}
+
+      const targetUid = Object.entries(usersData).find(
+        ([, userData]) => userData.profile?.email?.toLowerCase() === shareEmail.trim().toLowerCase()
+      )?.[0]
+
+      if (!targetUid) {
+        setShareStatus('error')
+        setShareError('User not found. They need to sign in at least once.')
+        return
+      }
+
+      if (targetUid === user.uid) {
+        setShareStatus('error')
+        setShareError("That's your own account!")
+        return
+      }
+
+      // Grant access
+      await set(ref(database, `drawing_access/${drawingId}/${targetUid}`), true)
+      await rtdbUpdate(ref(database, `drawings/${drawingId}/members/${targetUid}`), {
+        role: shareRole,
+        addedAt: serverTimestamp(),
+        addedBy: user.uid,
+      })
+
+      setShareStatus('success')
+      setShareEmail('')
+      setTimeout(() => setShareStatus(null), 3000)
+    } catch (error) {
+      console.error('Error sharing:', error)
+      setShareStatus('error')
+      setShareError('Something went wrong. Please try again.')
+    }
+  }, [shareEmail, shareRole, drawingId, user])
+
   const handleManualSave = useCallback(() => {
     if (!saveChanges) {
       return
     }
     const result = saveChanges('manual')
     if (result && typeof result.then === 'function') {
-      result.catch((error) => {
-        console.error('Manual save failed:', error)
-      })
+      result
+        .then(() => generateThumbnail())
+        .catch((error) => {
+          console.error('Manual save failed:', error)
+        })
     }
-  }, [saveChanges])
+  }, [saveChanges, generateThumbnail])
 
   const handleCanvasExport = useCallback(async () => {
     if (!isAdmin) {
@@ -175,9 +362,11 @@ function App() {
       if (hasPendingChanges && !isSaving) {
         const result = saveChanges('autosave')
         if (result && typeof result.then === 'function') {
-          result.catch((error) => {
-            console.error('Autosave failed:', error)
-          })
+          result
+            .then(() => generateThumbnail())
+            .catch((error) => {
+              console.error('Autosave failed:', error)
+            })
         }
       }
     }, 10000)
@@ -185,7 +374,7 @@ function App() {
     return () => {
       clearInterval(interval)
     }
-  }, [saveChanges, hasPendingChanges, isSaving])
+  }, [saveChanges, hasPendingChanges, isSaving, generateThumbnail])
 
   const handleThemeToggle = useCallback(() => {
     setTheme((current) => (current === 'light' ? 'dark' : 'light'))
@@ -915,6 +1104,40 @@ function App() {
 
   return (
     <div className={`app app-${theme}`}>
+      {/* ── Back to Home + Breadcrumb ── */}
+      <div className="canvas-breadcrumb">
+        <button
+          type="button"
+          className="back-home-btn"
+          onClick={() => navigate('/')}
+          title="Back to dashboard"
+        >
+          <House size={16} weight="fill" />
+        </button>
+        {drawingMeta.name && (
+          <div className="canvas-breadcrumb__trail">
+            <CaretRight size={12} weight="bold" className="canvas-breadcrumb__sep" />
+            {drawingMeta.workspaceName ? (
+              <>
+                <span className="canvas-breadcrumb__workspace">{drawingMeta.workspaceName}</span>
+                <CaretRight size={10} weight="bold" className="canvas-breadcrumb__sep" />
+              </>
+            ) : null}
+            <span className="canvas-breadcrumb__drawing">{drawingMeta.name}</span>
+          </div>
+        )}
+        <span className="canvas-breadcrumb__spacer" />
+        <button
+          type="button"
+          className="canvas-breadcrumb__share-btn"
+          onClick={handleOpenShare}
+          title="Share this drawing"
+        >
+          <ShareNetwork size={14} weight="bold" />
+          <span>Share</span>
+        </button>
+      </div>
+
       <div className="floating-brand" ref={menuRef}>
         <button
           type="button"
@@ -1150,6 +1373,86 @@ function App() {
         accentColor={userIdentity?.color}
         initialAvatarUrl={userIdentity?.avatarUrl || null}
       />
+      {/* ── Share Dialog Modal (portaled to body to escape Excalidraw z-index) ── */}
+      {isShareOpen && createPortal(
+        <div className="share-overlay" onClick={() => setIsShareOpen(false)}>
+          <div className="share-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="share-dialog__header">
+              <h2 className="share-dialog__title">
+                <Users size={20} />
+                <span>Share drawing</span>
+              </h2>
+              {drawingMeta.name && (
+                <span className="share-dialog__drawing-name">{drawingMeta.name}</span>
+              )}
+            </div>
+
+            {/* Copy link row */}
+            <button
+              type="button"
+              className={`share-dialog__copy-link${copiedLink ? ' share-dialog__copy-link--copied' : ''}`}
+              onClick={handleCopyLink}
+            >
+              {copiedLink ? (
+                <><Check size={16} weight="bold" /> Link copied!</>
+              ) : (
+                <><LinkSimple size={16} weight="bold" /> Copy drawing link</>
+              )}
+            </button>
+
+            {/* Invite by email */}
+            <div className="share-dialog__invite-section">
+              <span className="share-dialog__label">Invite by email</span>
+              <div className="share-dialog__body">
+                <input
+                  type="email"
+                  className="share-dialog__input"
+                  placeholder="colleague@company.com"
+                  value={shareEmail}
+                  onChange={(e) => setShareEmail(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleShareInvite() }}
+                  autoFocus
+                />
+                <select
+                  className="share-dialog__select"
+                  value={shareRole}
+                  onChange={(e) => setShareRole(e.target.value)}
+                >
+                  <option value="editor">Editor</option>
+                  <option value="viewer">Viewer</option>
+                </select>
+                <button
+                  type="button"
+                  className="share-dialog__btn"
+                  onClick={handleShareInvite}
+                  disabled={shareStatus === 'sending' || !shareEmail.trim()}
+                >
+                  {shareStatus === 'sending' ? 'Inviting…' : 'Invite'}
+                </button>
+              </div>
+              {shareStatus === 'success' && (
+                <span className="share-dialog__feedback share-dialog__feedback--success">
+                  <Check size={14} weight="bold" /> Invited successfully!
+                </span>
+              )}
+              {shareStatus === 'error' && (
+                <span className="share-dialog__feedback share-dialog__feedback--error">
+                  {shareError}
+                </span>
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="share-dialog__close"
+              onClick={() => setIsShareOpen(false)}
+            >
+              Done
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }

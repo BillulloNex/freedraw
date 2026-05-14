@@ -88,6 +88,7 @@ export default function DashboardPage() {
           ownerId: meta.ownerId,
           createdAt: meta.createdAt || 0,
           updatedAt: meta.updatedAt || 0,
+          thumbnailUrl: meta.thumbnailUrl || null,
         }
       })
 
@@ -445,7 +446,36 @@ export default function DashboardPage() {
         </div>
 
         <div className="dashboard-content">
-          {/* New Drawing Card */}
+          {/* Hero welcome section */}
+          {activeWorkspace === null && !searchQuery && (
+            <div className="dashboard-hero">
+              <h2 className="dashboard-hero__greeting">
+                Welcome back, <span className="dashboard-hero__greeting-name">{userProfile?.displayName?.split(' ')[0] || 'Creator'}</span>
+              </h2>
+              <p className="dashboard-hero__subtitle">Pick up where you left off, or start something new.</p>
+              <div className="dashboard-hero__stats">
+                <div className="dashboard-hero__stat">
+                  <span className="dashboard-hero__stat-value">{drawings.length}</span>
+                  <span className="dashboard-hero__stat-label">Drawings</span>
+                </div>
+                <div className="dashboard-hero__stat">
+                  <span className="dashboard-hero__stat-value">{workspaces.length}</span>
+                  <span className="dashboard-hero__stat-label">Workspaces</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Section header */}
+          <div className="dashboard-section-header">
+            <h3 className="dashboard-section-title">
+              {activeWorkspace
+                ? `${workspaces.find((ws) => ws.id === activeWorkspace)?.name || 'Workspace'} drawings`
+                : searchQuery ? 'Search results' : 'Recent drawings'}
+            </h3>
+          </div>
+
+          {/* Drawing Grid */}
           <div className="drawing-grid">
             <button
               type="button"
@@ -505,8 +535,17 @@ export default function DashboardPage() {
                 tabIndex={0}
                 onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/draw/${drawing.id}`) }}
               >
-                <div className="drawing-card__preview">
-                  <PencilSimpleLine size={28} weight="duotone" />
+                <div className={`drawing-card__preview${drawing.thumbnailUrl ? ' drawing-card__preview--has-thumb' : ''}`}>
+                  {drawing.thumbnailUrl ? (
+                    <img
+                      src={drawing.thumbnailUrl}
+                      alt={drawing.name}
+                      className="drawing-card__thumb"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <PencilSimpleLine size={28} weight="duotone" />
+                  )}
                 </div>
                 <div className="drawing-card__info">
                   {renameTarget?.type === 'drawing' && renameTarget.id === drawing.id ? (
@@ -559,8 +598,17 @@ export default function DashboardPage() {
                 tabIndex={0}
                 onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/draw/${drawing.id}`) }}
               >
-                <div className="drawing-card__preview">
-                  <PencilSimpleLine size={28} weight="duotone" />
+                <div className={`drawing-card__preview${drawing.thumbnailUrl ? ' drawing-card__preview--has-thumb' : ''}`}>
+                  {drawing.thumbnailUrl ? (
+                    <img
+                      src={drawing.thumbnailUrl}
+                      alt={drawing.name}
+                      className="drawing-card__thumb"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <PencilSimpleLine size={28} weight="duotone" />
+                  )}
                 </div>
                 <div className="drawing-card__info">
                   {renameTarget?.type === 'drawing' && renameTarget.id === drawing.id ? (
@@ -600,7 +648,9 @@ export default function DashboardPage() {
 
           {filteredDrawings.length === 0 && !isCreatingDrawing && (
             <div className="dashboard-empty">
-              <PencilSimpleLine size={48} weight="duotone" />
+              <div className="dashboard-empty__icon">
+                <PencilSimpleLine size={36} weight="duotone" />
+              </div>
               <p>{searchQuery ? 'No drawings match your search' : 'No drawings yet'}</p>
               <span>Create your first drawing to get started</span>
             </div>

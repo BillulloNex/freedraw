@@ -1000,12 +1000,22 @@ export function useCollaboration(excalidrawAPI, pendingFilesRef, { drawingId = n
 
       const handleChange = (elements, state, _files, info = {}) => {
         const { source } = info
-        if (source === 'api') {
-          return
-        }
 
         if (isApplyingSceneUpdateRef.current) {
           return
+        }
+
+        // When Excalidraw performs copy/paste, it fires onChange with source='api'.
+        // We need to allow those changes through when new elements appear (paste)
+        // but still skip programmatic scene updates from our own collaboration code.
+        if (source === 'api') {
+          const previousElements = previousSceneRef.current || []
+          const previousIds = new Set(previousElements.map((el) => el.id))
+          const hasNewElements = elements.some((el) => el && !previousIds.has(el.id))
+          if (!hasNewElements) {
+            return
+          }
+          // New elements detected — likely a paste operation, allow it through
         }
 
         const previousElements = previousSceneRef.current || []
