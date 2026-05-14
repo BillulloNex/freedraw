@@ -568,11 +568,17 @@ function App() {
   }, [userIdentity, hasDismissedAvatarPrompt, isManualAvatarEdit])
 
   // Handle image paste/upload - upload to Firebase Storage
+  // IMPORTANT: Excalidraw's onPaste convention:
+  //   return false  → BLOCK Excalidraw's native paste (we handled it)
+  //   return true   → ALLOW Excalidraw to proceed with its own paste
   const handlePaste = useCallback(
     async (data, event) => {
       // Check if clipboard contains files (images)
       const items = event?.clipboardData?.items
-      if (!items || !userIdentity) return false
+      if (!items || !userIdentity) {
+        // No clipboard items or no user identity — let Excalidraw handle it
+        return true
+      }
 
       for (let i = 0; i < items.length; i++) {
         const item = items[i]
@@ -672,15 +678,19 @@ function App() {
               console.log('Image element added to canvas, file stored for sync')
             }
 
-            return true
+            // We handled the image paste — block Excalidraw's default paste
+            return false
           } catch (error) {
             console.error('Failed to upload image:', error)
-            return false
+            // Error during image upload — let Excalidraw handle it
+            return true
           }
         }
       }
 
-      return false
+      // No image items found — let Excalidraw handle the paste natively
+      // (this is the path for element copy/paste, text paste, etc.)
+      return true
     },
     [excalidrawAPI, userIdentity]
   )
